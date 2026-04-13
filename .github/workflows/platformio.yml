@@ -57,7 +57,7 @@ jobs:
           pio run -e ${{ matrix.board }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: build-logs-${{ matrix.board }}-${{ matrix.example }}
@@ -237,7 +237,7 @@ jobs:
           cd release && zip -r ../ESP32-CH390-${{ github.event.release.tag_name }}.zip .
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ESP32-CH390-Release-${{ github.event.release.tag_name }}
           path: ESP32-CH390-*.zip
