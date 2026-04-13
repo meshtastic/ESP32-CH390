@@ -208,6 +208,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     needs: [build-examples, test-library, code-quality]
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -241,3 +243,10 @@ jobs:
         with:
           name: ESP32-CH390-Release-${{ github.event.release.tag_name }}
           path: ESP32-CH390-*.zip
+
+      - name: Attach artifacts to GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            ESP32-CH390-*.zip
+            *.tar.gz
