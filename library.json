@@ -1,0 +1,59 @@
+{
+  "name": "ESP32-CH390",
+  "version": "1.0.1",
+  "description": "Arduino library for the WCH CH390 SPI Ethernet controller (MAC+PHY). Ported from the ESP-IDF CH390 driver. Supports DHCP and static IP, link and PHY status, PHY register access, and the standard Arduino-ESP32 WiFi event system.",
+  "keywords": [
+    "ethernet",
+    "phy",
+    "ch390",
+    "esp32",
+    "networking",
+    "tcpip",
+    "dhcp",
+    "static-ip",
+    "esp-idf",
+    "arduino"
+  ],
+  "authors": [
+    {
+      "name": "Thomas Göttgens",
+      "email": "thomas@meshtastic.com",
+      "url": "https://github.com/meshtastic",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meshtastic/ESP32-CH390.git"
+  },
+  "homepage": "https://github.com/meshtastic/ESP32-CH390",
+  "license": "LGPL-3.0-or-later",
+  "platforms": ["espressif32"],
+  "frameworks": ["arduino"],
+  "headers": ["ESP32_CH390.h"],
+  "export": {
+    "include": ["src/*", "examples/*", "*.md", "*.txt", "LICENSE", "NOTICE"]
+  },
+  "build": {
+    "includeDir": "src",
+    "srcDir": "src"
+  },
+  "dependencies": [],
+  "examples": [
+    {
+      "name": "Basic Usage",
+      "base": "examples/Basic",
+      "files": ["Basic.ino"]
+    },
+    {
+      "name": "Static IP Configuration",
+      "base": "examples/StaticIP",
+      "files": ["StaticIP.ino"]
+    },
+    {
+      "name": "Advanced Features",
+      "base": "examples/Advanced",
+      "files": ["Advanced.ino"]
+    }
+  ]
+}

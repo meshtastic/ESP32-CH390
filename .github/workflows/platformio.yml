@@ -1,0 +1,242 @@
+name: ESP32-CH390 PlatformIO CI
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master]
+  release:
+    types: [published]
+
+jobs:
+  build-examples:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - esp32dev
+          - esp32doit-devkit-v1
+          - esp32-s3-devkitc-1
+          - esp32-c3-devkitc-02
+        example:
+          - Basic
+          - StaticIP
+          - Advanced
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-${{ hashFiles('**/lockfiles') }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Build ${{ matrix.example }} example for ${{ matrix.board }}
+        run: |
+          cd examples/${{ matrix.example }}
+          pio run -e ${{ matrix.board }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs-${{ matrix.board }}-${{ matrix.example }}
+          path: |
+            examples/${{ matrix.example }}/.pio/build/*/
+            !**/.pio/build/**/firmware.bin
+
+  test-library:
+    runs-on: ubuntu-latest
+    needs: build-examples
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Run library tests
+        run: |
+          if [ -d "test" ]; then
+            pio test -e esp32dev --verbose
+          else
+            echo "No tests found, skipping."
+          fi
+
+      - name: Check library structure
+        run: |
+          set -e
+          for f in library.json library.properties README.md LICENSE NOTICE \
+                   src/ESP32_CH390.h src/ESP32_CH390.cpp \
+                   examples/Basic/Basic.ino \
+                   examples/StaticIP/StaticIP.ino \
+                   examples/Advanced/Advanced.ino; do
+            test -e "$f" || { echo "Missing required file: $f"; exit 1; }
+          done
+          echo "Library structure OK."
+
+      - name: Validate library.json
+        run: |
+          python - <<'EOF'
+          import json, sys
+          with open('library.json') as f:
+              data = json.load(f)
+          for key in ('name', 'version', 'platforms'):
+              if key not in data:
+                  sys.exit(f"library.json missing key: {key}")
+          if 'espressif32' not in data['platforms']:
+              sys.exit("library.json: 'espressif32' not listed in platforms")
+          print("library.json OK.")
+          EOF
+
+  code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format
+
+      - name: Check code formatting
+        continue-on-error: true
+        run: |
+          find src examples -name "*.cpp" -o -name "*.h" -o -name "*.ino" | \
+          xargs clang-format --dry-run --style='{
+            BasedOnStyle: Google,
+            IndentWidth: 2,
+            ColumnLimit: 120,
+            AllowShortFunctionsOnASingleLine: Empty
+          }' || echo "Formatting issues found (non-fatal)."
+
+      - name: Check line endings
+        run: |
+          if git ls-files | xargs file | grep CRLF; then
+            echo "CRLF line endings found. Use LF line endings."
+            exit 1
+          fi
+          echo "Line endings OK."
+
+      - name: Count TODO/FIXME comments
+        run: |
+          TODO_COUNT=$(grep -rE "TODO|FIXME" src examples \
+            --include="*.cpp" --include="*.h" --include="*.ino" | wc -l)
+          echo "TODO/FIXME count: $TODO_COUNT"
+
+  documentation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check README sections
+        run: |
+          set -e
+          grep -qE "^## (Quick Start|Configuration)" README.md \
+            || { echo "README missing Quick Start/Configuration section"; exit 1; }
+          grep -qE "^## API" README.md \
+            || { echo "README missing API section"; exit 1; }
+          echo "README sections OK."
+
+      - name: Generate documentation preview
+        continue-on-error: true
+        run: |
+          if [ ! -f "Doxyfile" ]; then
+            echo "No Doxyfile present, skipping."
+            exit 0
+          fi
+          if ! command -v doxygen >/dev/null 2>&1; then
+            echo "Doxygen not installed, skipping."
+            exit 0
+          fi
+          doxygen Doxyfile 2>&1 | tee doxygen.log
+          if grep -qE "error|Error|ERROR" doxygen.log; then
+            echo "Documentation generation reported errors (non-fatal)."
+          fi
+
+  compatibility-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platformio-core:
+          - 6.1.11
+          - 6.0.2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+
+      - name: Install PlatformIO ${{ matrix.platformio-core }}
+        run: pip install platformio==${{ matrix.platformio-core }}
+
+      - name: Build Basic example
+        run: |
+          cd examples/Basic
+          pio run -e esp32dev
+
+  publish-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    needs: [build-examples, test-library, code-quality]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Validate package for publishing
+        run: pio package pack --silent
+
+      # Uncomment to auto-publish on release
+      # - name: Publish to PlatformIO Registry
+      #   env:
+      #     PLATFORMIO_AUTH_TOKEN: ${{ secrets.PLATFORMIO_AUTH_TOKEN }}
+      #   run: pio package publish --non-interactive
+
+      - name: Create release artifacts
+        run: |
+          mkdir -p release
+          cp -r src examples library.json library.properties keywords.txt \
+                README.md LICENSE NOTICE release/
+          cd release && zip -r ../ESP32-CH390-${{ github.event.release.tag_name }}.zip .
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP32-CH390-Release-${{ github.event.release.tag_name }}
+          path: ESP32-CH390-*.zip

@@ -1,0 +1,27 @@
+ESP32-CH390 Arduino Library
+Copyright (c) 2024-2026 Thomas Goettgens and contributors
+
+This product is licensed under the GNU Lesser General Public License v3.0 or
+later (SPDX-License-Identifier: LGPL-3.0-or-later). See the LICENSE file for
+the full license text. LGPL-3.0 incorporates the terms of GPL-3.0 by
+reference; both texts are included in LICENSE.
+
+Portions of this software are derived from the ESP-IDF CH390 Ethernet driver:
+
+    Copyright (c) 2024-2025 Espressif Systems (Shanghai) CO LTD
+    SPDX-FileContributor: 2024-2025 Sergey Kharenko
+    SPDX-FileContributor: 2024-2025 Espressif Systems (Shanghai) CO LTD
+    Licensed under the Apache License, Version 2.0.
+
+The upstream source is available at:
+
+    https://github.com/espressif/esp-eth-drivers/tree/master/ch390
+
+A copy of the Apache License, Version 2.0 may be obtained at:
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+The Apache-2.0 license permits redistribution of derivative works under the
+GNU LGPL v3. Files in `src/` that originated as ports of the upstream driver
+retain attribution to the original authors in their SPDX headers; the
+combined work in this repository is licensed under LGPL-3.0-or-later.

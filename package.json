@@ -1,0 +1,54 @@
+{
+  "name": "esp32-ch390",
+  "version": "1.0.1",
+  "description": "Arduino library for the WCH CH390 SPI Ethernet controller (MAC+PHY) on ESP32.",
+  "scripts": {
+    "build": "platformio lib build",
+    "examples": "platformio lib examples"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meshtastic/ESP32-CH390.git"
+  },
+  "keywords": [
+    "esp32",
+    "ethernet",
+    "ch390",
+    "phy",
+    "arduino",
+    "platformio",
+    "iot",
+    "networking",
+    "embedded",
+    "esp-idf",
+    "tcp-ip",
+    "dhcp",
+    "static-ip"
+  ],
+  "author": {
+    "name": "Thomas Göttgens",
+    "email": "thomas@meshtastic.com",
+    "url": "https://github.com/meshtastic"
+  },
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/meshtastic/ESP32-CH390/issues"
+  },
+  "homepage": "https://github.com/meshtastic/ESP32-CH390",
+  "engines": {
+    "platformio": ">=6.0.0"
+  },
+  "platformio": {
+    "platforms": [
+      "espressif32"
+    ],
+    "frameworks": [
+      "arduino"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {
+    "platformio-core": ">=6.0.0"
+  }
+}
