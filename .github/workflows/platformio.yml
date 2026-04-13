@@ -184,8 +184,9 @@ jobs:
     strategy:
       matrix:
         platformio-core:
+          - 6.1.19
+          - 6.1.18
           - 6.1.11
-          - 6.0.2
 
     steps:
       - uses: actions/checkout@v4
