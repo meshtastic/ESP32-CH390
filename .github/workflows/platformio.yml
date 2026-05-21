@@ -53,7 +53,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
@@ -82,7 +82,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
@@ -201,7 +201,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install PlatformIO ${{ matrix.platformio-core }}
         run: pip install platformio==${{ matrix.platformio-core }}
@@ -224,7 +224,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: "3.12"
 
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
