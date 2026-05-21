@@ -124,18 +124,22 @@ bool ESP32_CH390::config(IPAddress local_ip, IPAddress gateway,
     return false;
   }
 
-  // Compare as uint32_t: the Arduino-ESP32 3.x IPAddress class makes a direct
-  // `IPAddress != <integer>` comparison ambiguous.
-  if (static_cast<uint32_t>(dns1) != INADDR_NONE) {
+  // Only apply a DNS server when a real address was provided. dns1/dns2
+  // default to 0.0.0.0 (the documented "unset" value); 255.255.255.255
+  // (INADDR_NONE) is likewise not a usable server. Comparing as uint32_t
+  // also avoids the ambiguous IPAddress operator!= in Arduino-ESP32 3.x.
+  uint32_t dns1_addr = static_cast<uint32_t>(dns1);
+  if (dns1_addr != 0 && dns1_addr != INADDR_NONE) {
     esp_netif_dns_info_t dns_info;
-    dns_info.ip.u_addr.ip4.addr = static_cast<uint32_t>(dns1);
+    dns_info.ip.u_addr.ip4.addr = dns1_addr;
     dns_info.ip.type = ESP_IPADDR_TYPE_V4;
     esp_netif_set_dns_info(eth_netif, ESP_NETIF_DNS_MAIN, &dns_info);
   }
 
-  if (static_cast<uint32_t>(dns2) != INADDR_NONE) {
+  uint32_t dns2_addr = static_cast<uint32_t>(dns2);
+  if (dns2_addr != 0 && dns2_addr != INADDR_NONE) {
     esp_netif_dns_info_t dns_info;
-    dns_info.ip.u_addr.ip4.addr = static_cast<uint32_t>(dns2);
+    dns_info.ip.u_addr.ip4.addr = dns2_addr;
     dns_info.ip.type = ESP_IPADDR_TYPE_V4;
     esp_netif_set_dns_info(eth_netif, ESP_NETIF_DNS_BACKUP, &dns_info);
   }
