@@ -18,11 +18,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board:
+        # IDF4 envs use the classic espressif32 platform; -idf5 envs use the
+        # pioarduino platform (ESP-IDF 5.5 / Arduino 3.3.8). Both are defined
+        # in each example's platformio.ini.
+        env:
           - esp32dev
           - esp32doit-devkit-v1
           - esp32-s3-devkitc-1
           - esp32-c3-devkitc-02
+          - esp32dev-idf5
+          - esp32doit-devkit-v1-idf5
+          - esp32-s3-devkitc-1-idf5
+          - esp32-c3-devkitc-02-idf5
         example:
           - Basic
           - StaticIP
@@ -51,16 +58,16 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
-      - name: Build ${{ matrix.example }} example for ${{ matrix.board }}
+      - name: Build ${{ matrix.example }} example for ${{ matrix.env }}
         run: |
           cd examples/${{ matrix.example }}
-          pio run -e ${{ matrix.board }}
+          pio run -e ${{ matrix.env }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: build-logs-${{ matrix.board }}-${{ matrix.example }}
+          name: build-logs-${{ matrix.env }}-${{ matrix.example }}
           path: |
             examples/${{ matrix.example }}/.pio/build/*/
             !**/.pio/build/**/firmware.bin

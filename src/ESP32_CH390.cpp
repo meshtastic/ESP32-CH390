@@ -124,14 +124,16 @@ bool ESP32_CH390::config(IPAddress local_ip, IPAddress gateway,
     return false;
   }
 
-  if (dns1 != INADDR_NONE) {
+  // Compare as uint32_t: the Arduino-ESP32 3.x IPAddress class makes a direct
+  // `IPAddress != <integer>` comparison ambiguous.
+  if (static_cast<uint32_t>(dns1) != INADDR_NONE) {
     esp_netif_dns_info_t dns_info;
     dns_info.ip.u_addr.ip4.addr = static_cast<uint32_t>(dns1);
     dns_info.ip.type = ESP_IPADDR_TYPE_V4;
     esp_netif_set_dns_info(eth_netif, ESP_NETIF_DNS_MAIN, &dns_info);
   }
 
-  if (dns2 != INADDR_NONE) {
+  if (static_cast<uint32_t>(dns2) != INADDR_NONE) {
     esp_netif_dns_info_t dns_info;
     dns_info.ip.u_addr.ip4.addr = static_cast<uint32_t>(dns2);
     dns_info.ip.type = ESP_IPADDR_TYPE_V4;
@@ -365,20 +367,21 @@ uint32_t ESP32_CH390::readPHY(uint8_t reg) {
 #if CH390_HAS_ETH_CORE
 #ifdef ETH_CMD_READ_PHY_REG
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-
+  // IDF 5.x: ETH_CMD_READ_PHY_REG expects esp_eth_phy_reg_rw_data_t, which
+  // carries the register value by pointer (reg_value_p).
   uint32_t value = 0;
-  if (eth_ioctl_4param(eth_handle, ETH_CMD_READ_PHY_REG, &reg, &value) ==
-      ESP_OK) {
+  esp_eth_phy_reg_rw_data_t phy_reg = {.reg_addr = reg, .reg_value_p = &value};
+  if (esp_eth_ioctl(eth_handle, ETH_CMD_READ_PHY_REG, &phy_reg) == ESP_OK) {
     return value;
   }
 #else
-
+  // IDF 4.4: the register value is carried inline in the data struct.
   struct {
     uint32_t reg_addr;
     uint32_t reg_value;
   } phy_reg = {reg, 0};
 
-  if (eth_ioctl_3param(eth_handle, ETH_CMD_READ_PHY_REG, &phy_reg) == ESP_OK) {
+  if (esp_eth_ioctl(eth_handle, ETH_CMD_READ_PHY_REG, &phy_reg) == ESP_OK) {
     return phy_reg.reg_value;
   }
 #endif
@@ -394,19 +397,17 @@ bool ESP32_CH390::writePHY(uint8_t reg, uint32_t value) {
 #if CH390_HAS_ETH_CORE
 #ifdef ETH_CMD_WRITE_PHY_REG
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-
-  esp_err_t ret =
-      eth_ioctl_4param(eth_handle, ETH_CMD_WRITE_PHY_REG, &reg, &value);
-  return ret == ESP_OK;
+  // IDF 5.x: ETH_CMD_WRITE_PHY_REG expects esp_eth_phy_reg_rw_data_t.
+  esp_eth_phy_reg_rw_data_t phy_reg = {.reg_addr = reg, .reg_value_p = &value};
+  return esp_eth_ioctl(eth_handle, ETH_CMD_WRITE_PHY_REG, &phy_reg) == ESP_OK;
 #else
-
+  // IDF 4.4: the register value is carried inline in the data struct.
   struct {
     uint32_t reg_addr;
     uint32_t reg_value;
   } phy_reg = {reg, value};
 
-  esp_err_t ret = eth_ioctl_3param(eth_handle, ETH_CMD_WRITE_PHY_REG, &phy_reg);
-  return ret == ESP_OK;
+  return esp_eth_ioctl(eth_handle, ETH_CMD_WRITE_PHY_REG, &phy_reg) == ESP_OK;
 #endif
 #endif
 #endif

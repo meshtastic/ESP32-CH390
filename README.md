@@ -3,9 +3,10 @@
 Arduino library for the WCH CH390 SPI Ethernet controller. The CH390 is a
 complete 10/100 Mbps Ethernet solution (MAC + PHY) accessed over SPI.
 
-This library is an Arduino port of the ESP-IDF CH390 driver (based on IDF
-v4.4.7) and integrates with the Arduino-ESP32 network stack so it behaves like
-the built-in `ETH` class.
+This library is an Arduino port of the ESP-IDF CH390 driver and integrates with
+the Arduino-ESP32 network stack so it behaves like the built-in `ETH` class. It
+builds against both ESP-IDF 4.4 (classic Arduino-ESP32 2.x) and ESP-IDF 5.5
+(pioarduino / Arduino-ESP32 3.3.x).
 
 ## Hardware
 
@@ -143,7 +144,9 @@ void WiFiEvent(WiFiEvent_t event) {
 ## Compatibility
 
 - Platform: ESP32, ESP32-S2, ESP32-S3, ESP32-C3 (any ESP32 with SPI master)
-- Framework: Arduino-ESP32 2.0.0 or newer (ESP-IDF 4.4.x or 5.x)
+- Framework: Arduino-ESP32 2.x (ESP-IDF 4.4) and Arduino-ESP32 3.3.x
+  (ESP-IDF 5.5, via the pioarduino platform). The driver selects the correct
+  ESP-IDF Ethernet ABI at compile time using `ESP_IDF_VERSION`.
 - Interface: Hardware SPI, up to 33 MHz (20 MHz default)
 
 ## Notes

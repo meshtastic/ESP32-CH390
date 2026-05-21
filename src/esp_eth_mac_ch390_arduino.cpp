@@ -28,6 +28,11 @@
 #include "esp_heap_caps.h"
 #include "esp_idf_version.h"
 #include "esp_log.h"
+#if __has_include("esp_mac.h")
+// esp_read_mac() / ESP_MAC_ETH live in their own header since ESP-IDF 5.0;
+// on IDF 4.4 they are still reachable transitively.
+#include "esp_mac.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -811,8 +816,7 @@ static esp_err_t ch390_deinit(esp_eth_mac_t *mac) {
   return ESP_OK;
 }
 
-// enable_flow_ctrl and set_peer_pause_ability exist in IDF 4.4.7 (Arduino ABI).
-// custom_ioctl is IDF 5.0+ only.
+// enable_flow_ctrl and set_peer_pause_ability exist in both IDF 4.4 and 5.x.
 static esp_err_t ch390_mac_enable_flow_ctrl(esp_eth_mac_t *mac, bool enable) {
   emac_ch390_t *emac = __containerof(mac, emac_ch390_t, parent);
   emac->flow_ctrl_enabled = enable;
@@ -830,14 +834,6 @@ static esp_err_t ch390_set_peer_pause_ability(esp_eth_mac_t *mac,
   }
   return ESP_OK;
 }
-
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-static esp_err_t ch390_custom_ioctl(esp_eth_mac_t *mac, uint32_t cmd,
-                                    void *data) {
-  // No custom ioctl commands supported
-  return ESP_ERR_NOT_SUPPORTED;
-}
-#endif
 
 static esp_err_t ch390_del(esp_eth_mac_t *mac) {
   emac_ch390_t *emac = __containerof(mac, emac_ch390_t, parent);
@@ -958,13 +954,13 @@ esp_eth_mac_new_ch390_arduino(const eth_ch390_config_t *ch390_config,
   emac->parent.transmit = ch390_transmit;
   emac->parent.receive = ch390_receive;
 
-  // enable_flow_ctrl and set_peer_pause_ability exist in IDF 4.4.7+ (Arduino
-  // ABI) — must be assigned unconditionally, as the upstream W5500 driver does.
+  // enable_flow_ctrl and set_peer_pause_ability exist in both IDF 4.4 and 5.x,
+  // so they are assigned unconditionally, as the upstream W5500 driver does.
   emac->parent.enable_flow_ctrl = ch390_mac_enable_flow_ctrl;
   emac->parent.set_peer_pause_ability = ch390_set_peer_pause_ability;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-  emac->parent.custom_ioctl = ch390_custom_ioctl;
-#endif
+  // MAC members new in IDF 5.5 (transmit_vargs, add_mac_filter, rm_mac_filter,
+  // set_all_multicast, custom_ioctl) are intentionally left NULL: esp_eth_ioctl
+  // NULL-checks them and the CH390 already accepts all multicast (RCR_ALL).
 
   // Configure SPI device
   spi_device_interface_config_t spi_devcfg = *ch390_config->spi_devcfg;

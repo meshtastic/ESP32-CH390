@@ -183,22 +183,10 @@ typedef struct {
 // Note: This library uses the standard Arduino WiFi event system.
 // Register event handlers using: WiFi.onEvent(yourCallbackFunction)
 
-#if CH390_HAS_ETH_CORE
-static inline esp_err_t eth_ioctl_3param(esp_eth_handle_t handle,
-                                         esp_eth_io_cmd_t cmd, void *data) {
-  return esp_eth_ioctl(handle, cmd, data);
-}
-
-static inline esp_err_t eth_ioctl_4param(esp_eth_handle_t handle,
-                                         esp_eth_io_cmd_t cmd, void *in,
-                                         void *out) {
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-  return esp_eth_ioctl(handle, cmd, in, out);
-#else
-  return esp_eth_ioctl(handle, cmd, out ? out : in);
-#endif
-}
-#endif
+// esp_eth_ioctl has a fixed 3-argument signature
+// (handle, cmd, void *data) in both ESP-IDF 4.4 and 5.x; it is never variadic.
+// Commands take a single data pointer — see readPHY()/writePHY() for the only
+// case where the pointed-to struct layout differs between IDF versions.
 
 class ESP32_CH390 {
 public:

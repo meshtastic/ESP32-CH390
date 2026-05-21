@@ -80,9 +80,20 @@ typedef struct {
   int reset_gpio_num;
 } phy_ch390_t;
 
+// Auto-negotiation commands (port-internal, version-agnostic). The ESP-IDF
+// PHY ABI for auto-negotiation differs between IDF 4.x (negotiate) and IDF 5.x
+// (autonego_ctrl with its own eth_phy_autoneg_cmd_t enum), so the driver keeps
+// its own enum and a single worker, with thin version-specific callbacks.
+typedef enum {
+  CH390_AUTONEGO_EN = 0,
+  CH390_AUTONEGO_DIS = 1,
+  CH390_AUTONEGO_G_STAT = 2
+} ch390_autonego_cmd_t;
+
 // Forward declarations
-static esp_err_t ch390_autonego_ctrl(esp_eth_phy_t *phy, int cmd,
-                                     bool *autonego_en_stat);
+static esp_err_t ch390_autonego_apply(esp_eth_phy_t *phy,
+                                      ch390_autonego_cmd_t cmd,
+                                      bool *autonego_en_stat);
 
 static esp_err_t ch390_update_link_duplex_speed(phy_ch390_t *ch390) {
   esp_err_t ret = ESP_OK;
@@ -309,9 +320,9 @@ static esp_err_t ch390_init(esp_eth_phy_t *phy) {
     return ret;
   }
 
-  ret = ch390_autonego_ctrl(phy, 0, NULL);
+  ret = ch390_autonego_apply(phy, CH390_AUTONEGO_EN, NULL);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "ch390_autonego_ctrl failed: %d", ret);
+    ESP_LOGE(TAG, "ch390_autonego_apply failed: %d", ret);
     return ret;
   }
 
@@ -320,19 +331,9 @@ static esp_err_t ch390_init(esp_eth_phy_t *phy) {
 
 static esp_err_t ch390_deinit(esp_eth_phy_t *phy) { return ESP_OK; }
 
-static esp_err_t ch390_negotiate(esp_eth_phy_t *phy) {
-  return ch390_autonego_ctrl(phy, 0, NULL);
-}
-
-// Define our own enum for auto-negotiation commands
-typedef enum {
-  CH390_AUTONEGO_EN = 0,
-  CH390_AUTONEGO_DIS = 1,
-  CH390_AUTONEGO_G_STAT = 2
-} ch390_autonego_cmd_t;
-
-static esp_err_t ch390_autonego_ctrl(esp_eth_phy_t *phy, int cmd,
-                                     bool *autonego_en_stat) {
+static esp_err_t ch390_autonego_apply(esp_eth_phy_t *phy,
+                                      ch390_autonego_cmd_t cmd,
+                                      bool *autonego_en_stat) {
   esp_err_t ret = ESP_OK;
   phy_ch390_t *ch390 = (phy_ch390_t *)phy;
   esp_eth_mediator_t *eth = ch390->eth;
@@ -394,6 +395,31 @@ static esp_err_t ch390_autonego_ctrl(esp_eth_phy_t *phy, int cmd,
   return ESP_OK;
 }
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+// IDF 5.x PHY ABI: the struct member is autonego_ctrl(), taking IDF's own
+// eth_phy_autoneg_cmd_t. Translate it to the port-internal command.
+static esp_err_t ch390_autonego_ctrl(esp_eth_phy_t *phy,
+                                     eth_phy_autoneg_cmd_t cmd,
+                                     bool *autonego_en_stat) {
+  switch (cmd) {
+  case ESP_ETH_PHY_AUTONEGO_RESTART:
+  case ESP_ETH_PHY_AUTONEGO_EN:
+    return ch390_autonego_apply(phy, CH390_AUTONEGO_EN, autonego_en_stat);
+  case ESP_ETH_PHY_AUTONEGO_DIS:
+    return ch390_autonego_apply(phy, CH390_AUTONEGO_DIS, autonego_en_stat);
+  case ESP_ETH_PHY_AUTONEGO_G_STAT:
+    return ch390_autonego_apply(phy, CH390_AUTONEGO_G_STAT, autonego_en_stat);
+  default:
+    return ESP_ERR_INVALID_ARG;
+  }
+}
+#else
+// IDF 4.x PHY ABI: the struct member is negotiate(), with no command argument.
+static esp_err_t ch390_negotiate(esp_eth_phy_t *phy) {
+  return ch390_autonego_apply(phy, CH390_AUTONEGO_EN, NULL);
+}
+#endif
+
 static esp_err_t ch390_loopback(esp_eth_phy_t *phy, bool enable) {
   esp_err_t ret = ESP_OK;
   phy_ch390_t *ch390 = (phy_ch390_t *)phy;
@@ -406,7 +432,7 @@ static esp_err_t ch390_loopback(esp_eth_phy_t *phy, bool enable) {
   // Validate: can't enable loopback while auto-negotiation is enabled
   if (enable) {
     bool auto_nego_en = false;
-    ret = ch390_autonego_ctrl(phy, CH390_AUTONEGO_G_STAT, &auto_nego_en);
+    ret = ch390_autonego_apply(phy, CH390_AUTONEGO_G_STAT, &auto_nego_en);
     if (ret != ESP_OK) {
       return ret;
     }
@@ -469,14 +495,6 @@ static esp_err_t ch390_advertise_pause_ability(esp_eth_phy_t *phy,
   return ESP_OK;
 }
 
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-static esp_err_t ch390_custom_ioctl(esp_eth_phy_t *phy, uint32_t cmd,
-                                    void *data) {
-  ESP_LOGI(TAG, "PHY custom_ioctl called (cmd=%u) - not implemented", cmd);
-  return ESP_ERR_NOT_SUPPORTED;
-}
-#endif
-
 esp_eth_phy_t *esp_eth_phy_new_ch390_arduino(const eth_phy_config_t *config) {
   phy_ch390_t *ch390 = NULL;
 
@@ -502,7 +520,6 @@ esp_eth_phy_t *esp_eth_phy_new_ch390_arduino(const eth_phy_config_t *config) {
   ch390->parent.reset_hw = ch390_reset_hw;
   ch390->parent.init = ch390_init;
   ch390->parent.deinit = ch390_deinit;
-  ch390->parent.negotiate = ch390_negotiate;
   ch390->parent.get_link = ch390_get_link;
   ch390->parent.pwrctl = ch390_pwrctl;
   ch390->parent.set_addr = ch390_set_addr;
@@ -511,9 +528,11 @@ esp_eth_phy_t *esp_eth_phy_new_ch390_arduino(const eth_phy_config_t *config) {
   ch390->parent.loopback = ch390_loopback;
   ch390->parent.del = ch390_del;
 
+  // The auto-negotiation callback is named differently across IDF versions.
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
   ch390->parent.autonego_ctrl = ch390_autonego_ctrl;
-  ch390->parent.custom_ioctl = ch390_custom_ioctl;
+#else
+  ch390->parent.negotiate = ch390_negotiate;
 #endif
 
   return &ch390->parent;
