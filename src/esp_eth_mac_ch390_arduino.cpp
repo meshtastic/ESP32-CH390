@@ -563,6 +563,13 @@ err:
   return ret;
 }
 
+// Last resort when the RX pointer state is unknown
+static void ch390_restart(esp_eth_mac_t *mac) {
+  emac_ch390_stop(mac);
+  vTaskDelay(pdMS_TO_TICKS(1));
+  emac_ch390_start(mac);
+}
+
 static esp_err_t ch390_transmit(esp_eth_mac_t *mac, uint8_t *buf,
                                 uint32_t length) {
   esp_err_t ret = ESP_OK;
@@ -570,7 +577,8 @@ static esp_err_t ch390_transmit(esp_eth_mac_t *mac, uint8_t *buf,
   uint8_t tcr;
   uint32_t wait = 0;
 
-  if (length > CH390_MAX_FRAME_LEN) {
+  // The chip appends the FCS itself, so the input must stay below the limit
+  if (length > CH390_MAX_FRAME_LEN - ETH_CRC_LEN) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -619,9 +627,7 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
 
   // Check for packet error - reset MAC if detected
   if (ready & CH390_PKT_ERR) {
-    emac_ch390_stop(mac);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    emac_ch390_start(mac);
+    ch390_restart(mac);
     *length = 0;
     return ESP_ERR_INVALID_RESPONSE;
   }
@@ -640,21 +646,31 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
   // Check for frame errors
   if (header.status & RSR_ERR_MASK) {
     // A corrupt length would desync the RX ring; reset the pointer instead
+    esp_err_t recover;
     if (rx_len >= ETH_CRC_LEN && rx_len <= CH390_MAX_FRAME_LEN) {
-      ch390_drop_frame(emac, rx_len);
+      recover = ch390_drop_frame(emac, rx_len);
     } else {
-      ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
+      recover = ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
     }
     *length = 0;
+    if (recover != ESP_OK) {
+      // Pointer left in an unknown state, the next header would be garbage
+      ch390_restart(mac);
+      return recover;
+    }
     return ESP_ERR_INVALID_RESPONSE;
   }
 
   // rx_len includes the FCS stripped below; shorter would underflow
   if (rx_len < ETH_CRC_LEN || rx_len > *length ||
       rx_len > CH390_MAX_FRAME_LEN) {
-    ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
+    esp_err_t recover = ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
 
     *length = 0;
+    if (recover != ESP_OK) {
+      ch390_restart(mac);
+      return recover;
+    }
     return ESP_ERR_INVALID_SIZE;
   }
 
