@@ -175,6 +175,9 @@ static const char *TAG = "ch390.mac";
 #define CH390_TX_FIFO_SIZE 3072
 #define CH390_RX_FIFO_SIZE 16384
 
+// Max Ethernet frame, including the 4-byte FCS
+#define CH390_MAX_FRAME_LEN 1522
+
 #define CH390_PKT_RDY 0x01
 #define CH390_PKT_ERR 0xFE
 
@@ -560,6 +563,13 @@ err:
   return ret;
 }
 
+// Last resort when the RX pointer state is unknown
+static void ch390_restart(esp_eth_mac_t *mac) {
+  emac_ch390_stop(mac);
+  vTaskDelay(pdMS_TO_TICKS(1));
+  emac_ch390_start(mac);
+}
+
 static esp_err_t ch390_transmit(esp_eth_mac_t *mac, uint8_t *buf,
                                 uint32_t length) {
   esp_err_t ret = ESP_OK;
@@ -567,7 +577,8 @@ static esp_err_t ch390_transmit(esp_eth_mac_t *mac, uint8_t *buf,
   uint8_t tcr;
   uint32_t wait = 0;
 
-  if (length > 1522) {
+  // The chip appends the FCS itself, so the input must stay below the limit
+  if (length > CH390_MAX_FRAME_LEN - ETH_CRC_LEN) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -616,9 +627,7 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
 
   // Check for packet error - reset MAC if detected
   if (ready & CH390_PKT_ERR) {
-    emac_ch390_stop(mac);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    emac_ch390_start(mac);
+    ch390_restart(mac);
     *length = 0;
     return ESP_ERR_INVALID_RESPONSE;
   }
@@ -636,17 +645,32 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
 
   // Check for frame errors
   if (header.status & RSR_ERR_MASK) {
-    ch390_drop_frame(emac, rx_len);
+    // A corrupt length would desync the RX ring; reset the pointer instead
+    esp_err_t recover;
+    if (rx_len >= ETH_CRC_LEN && rx_len <= CH390_MAX_FRAME_LEN) {
+      recover = ch390_drop_frame(emac, rx_len);
+    } else {
+      recover = ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
+    }
     *length = 0;
+    if (recover != ESP_OK) {
+      // Pointer left in an unknown state, the next header would be garbage
+      ch390_restart(mac);
+      return recover;
+    }
     return ESP_ERR_INVALID_RESPONSE;
   }
 
-  // Check frame size
-  if (rx_len > *length || rx_len > 1522) {
-    // Reset RX memory pointer on oversized frame
-    ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
+  // rx_len includes the FCS stripped below; shorter would underflow
+  if (rx_len < ETH_CRC_LEN || rx_len > *length ||
+      rx_len > CH390_MAX_FRAME_LEN) {
+    esp_err_t recover = ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
 
     *length = 0;
+    if (recover != ESP_OK) {
+      ch390_restart(mac);
+      return recover;
+    }
     return ESP_ERR_INVALID_SIZE;
   }
 
@@ -890,7 +914,7 @@ static void emac_ch390_task(void *arg) {
     // Process received packets
     if (status & ISR_PR) {
       do {
-        rx_len = 1522;
+        rx_len = CH390_MAX_FRAME_LEN;
         if (emac->parent.receive(&emac->parent, emac->rx_buffer, &rx_len) ==
             ESP_OK) {
           if (rx_len == 0) {
@@ -899,7 +923,8 @@ static void emac_ch390_task(void *arg) {
 
           buffer = (uint8_t *)malloc(rx_len);
           if (buffer == NULL) {
-            continue;
+            // Wait for the next interrupt instead of spinning on OOM
+            break;
           }
 
           memcpy(buffer, emac->rx_buffer, rx_len);
@@ -996,7 +1021,8 @@ esp_eth_mac_new_ch390_arduino(const eth_ch390_config_t *ch390_config,
     esp_read_mac(emac->addr, ESP_MAC_ETH);
   }
   // Allocate DMA-capable RX buffer
-  emac->rx_buffer = (uint8_t *)heap_caps_malloc(1522, MALLOC_CAP_DMA);
+  emac->rx_buffer =
+      (uint8_t *)heap_caps_malloc(CH390_MAX_FRAME_LEN, MALLOC_CAP_DMA);
   if (!emac->rx_buffer) {
     spi_bus_remove_device(emac->spi_hdl);
     vSemaphoreDelete(emac->spi_lock);
