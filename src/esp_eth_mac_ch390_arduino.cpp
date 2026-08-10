@@ -175,7 +175,7 @@ static const char *TAG = "ch390.mac";
 #define CH390_TX_FIFO_SIZE 3072
 #define CH390_RX_FIFO_SIZE 16384
 
-// Largest Ethernet frame the driver accepts, including the 4-byte FCS
+// Max Ethernet frame, including the 4-byte FCS
 #define CH390_MAX_FRAME_LEN 1522
 
 #define CH390_PKT_RDY 0x01
@@ -639,10 +639,7 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
 
   // Check for frame errors
   if (header.status & RSR_ERR_MASK) {
-    // ch390_drop_frame() advances the read pointer by the header length, which
-    // is only trustworthy while it is in range. A corrupt value would leave the
-    // pointer outside the RX window and desync the ring permanently, so fall
-    // back to a full pointer reset instead.
+    // A corrupt length would desync the RX ring; reset the pointer instead
     if (rx_len >= ETH_CRC_LEN && rx_len <= CH390_MAX_FRAME_LEN) {
       ch390_drop_frame(emac, rx_len);
     } else {
@@ -652,11 +649,9 @@ static esp_err_t ch390_receive(esp_eth_mac_t *mac, uint8_t *buf,
     return ESP_ERR_INVALID_RESPONSE;
   }
 
-  // Check frame size. rx_len includes the 4-byte FCS stripped below, so a
-  // shorter value would underflow that subtraction and report a ~4GB frame.
+  // rx_len includes the FCS stripped below; shorter would underflow
   if (rx_len < ETH_CRC_LEN || rx_len > *length ||
       rx_len > CH390_MAX_FRAME_LEN) {
-    // Reset RX memory pointer on a malformed frame
     ch390_write_reg(emac, CH390_MPTRCR, MPTRCR_RST_RX);
 
     *length = 0;
@@ -912,8 +907,7 @@ static void emac_ch390_task(void *arg) {
 
           buffer = (uint8_t *)malloc(rx_len);
           if (buffer == NULL) {
-            // Out of heap: stop draining and wait for the next interrupt
-            // rather than spinning on back-to-back allocation failures.
+            // Wait for the next interrupt instead of spinning on OOM
             break;
           }
 
