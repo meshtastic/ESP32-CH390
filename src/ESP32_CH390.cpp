@@ -20,6 +20,15 @@
 #include "ESP32_CH390.h"
 #include "WiFiGeneric.h"
 
+// Arduino 3.x dispatches to WiFi.onEvent() handlers through NetworkEvents;
+// WiFiGenericClass::_eventCallback() there is WiFi scan/SmartConfig only.
+#if __has_include("NetworkManager.h")
+#include "NetworkManager.h"
+#define CH390_HAS_NETWORK_EVENTS 1
+#else
+#define CH390_HAS_NETWORK_EVENTS 0
+#endif
+
 #include "esp_idf_version.h"
 #include "esp_system.h"
 #include <string.h>
@@ -423,15 +432,22 @@ bool ESP32_CH390::initializeEthernet() {
   return false;
 #endif
 
-  esp_err_t err = esp_netif_init();
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+#if CH390_HAS_NETWORK_EVENTS
+  // Also starts the arduino_events task; postEvent() drops everything without it.
+  if (!Network.begin()) {
+    return false;
+  }
+#else
+  esp_err_t init_err = esp_netif_init();
+  if (init_err != ESP_OK && init_err != ESP_ERR_INVALID_STATE) {
     return false;
   }
 
-  err = esp_event_loop_create_default();
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+  init_err = esp_event_loop_create_default();
+  if (init_err != ESP_OK && init_err != ESP_ERR_INVALID_STATE) {
     return false;
   }
+#endif
 
   esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
   eth_netif = esp_netif_new(&netif_cfg);
@@ -463,8 +479,8 @@ bool ESP32_CH390::initializeEthernet() {
   return false;
 #endif
 
-  err = esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,
-                                   &eth_event_handler, this);
+  esp_err_t err = esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,
+                                            &eth_event_handler, this);
   if (err != ESP_OK) {
     return false;
   }
@@ -568,6 +584,14 @@ esp_eth_phy_t *ESP32_CH390::createPHYDriver() {
   return phy;
 }
 
+static void postArduinoEvent(arduino_event_t *event) {
+#if CH390_HAS_NETWORK_EVENTS
+  Network.postEvent(event);
+#else
+  WiFiGenericClass::_eventCallback(event);
+#endif
+}
+
 void ESP32_CH390::eth_event_handler(void *arg, esp_event_base_t event_base,
                                     int32_t event_id, void *event_data) {
   arduino_event_t arduino_event;
@@ -576,27 +600,25 @@ void ESP32_CH390::eth_event_handler(void *arg, esp_event_base_t event_base,
   switch (event_id) {
   case ETHERNET_EVENT_START:
     arduino_event.event_id = ARDUINO_EVENT_ETH_START;
-    WiFiGenericClass::_eventCallback(&arduino_event);
     break;
 
   case ETHERNET_EVENT_STOP:
     arduino_event.event_id = ARDUINO_EVENT_ETH_STOP;
-    WiFiGenericClass::_eventCallback(&arduino_event);
     break;
 
   case ETHERNET_EVENT_CONNECTED:
     arduino_event.event_id = ARDUINO_EVENT_ETH_CONNECTED;
-    WiFiGenericClass::_eventCallback(&arduino_event);
     break;
 
   case ETHERNET_EVENT_DISCONNECTED:
     arduino_event.event_id = ARDUINO_EVENT_ETH_DISCONNECTED;
-    WiFiGenericClass::_eventCallback(&arduino_event);
     break;
 
   default:
-    break;
+    return;
   }
+
+  postArduinoEvent(&arduino_event);
 }
 
 void ESP32_CH390::got_ip_event_handler(void *arg, esp_event_base_t event_base,
@@ -606,8 +628,6 @@ void ESP32_CH390::got_ip_event_handler(void *arg, esp_event_base_t event_base,
   arduino_event_t arduino_event;
   memset(&arduino_event, 0, sizeof(arduino_event_t));
   arduino_event.event_id = ARDUINO_EVENT_ETH_GOT_IP;
-  memcpy(&arduino_event.event_info.got_ip.ip_info, &event->ip_info,
-         sizeof(esp_netif_ip_info_t));
-  arduino_event.event_info.got_ip.ip_changed = event->ip_changed;
-  WiFiGenericClass::_eventCallback(&arduino_event);
+  arduino_event.event_info.got_ip = *event;
+  postArduinoEvent(&arduino_event);
 }
