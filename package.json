@@ -1,6 +1,6 @@
 {
   "name": "esp32-ch390",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Arduino library for the WCH CH390 SPI Ethernet controller (MAC+PHY) on ESP32.",
   "scripts": {
     "pack": "pio pkg pack",
